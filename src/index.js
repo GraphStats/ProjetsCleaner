@@ -1,6 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const readline = require("readline");
+const { spawnSync } = require("child_process");
 
 const TARGET_FOLDERS = new Set(["node_modules", "venv", ".venv", "env", ".env"]);
 const spinnerFrames = ["|", "/", "-", "\\"];
@@ -43,8 +44,11 @@ async function askMode() {
   console.log("Mode disponible :");
   console.log("  1) Ajouter dans .gitignore (defaut)");
   console.log("  2) Supprimer les dossiers trouves");
-  const choice = (await prompt("Votre choix (1/2) : ")).trim();
-  return choice === "2" ? "delete" : "gitignore";
+  console.log("  3) NPM Install (package.json detectes)");
+  const choice = (await prompt("Votre choix (1/2/3) : ")).trim();
+  if (choice === "2") return "delete";
+  if (choice === "3") return "npm";
+  return "gitignore";
 }
 
 function formatTime(seconds) {
@@ -81,6 +85,37 @@ function walkTargets(rootDir) {
         } else {
           stack.push(path.join(current, entry.name));
         }
+      }
+    }
+  }
+  return hits;
+}
+
+function walkPackageJson(rootDir) {
+  const stack = [rootDir];
+  const hits = [];
+  while (stack.length) {
+    const current = stack.pop();
+    let entries;
+    try {
+      entries = fs.readdirSync(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    const hasPackage = entries.some(
+      (e) => e.isFile() && e.name.toLowerCase() === "package.json"
+    );
+    if (hasPackage) {
+      hits.push(current);
+      continue;
+    }
+    for (const entry of entries) {
+      if (
+        entry.isDirectory() &&
+        entry.name !== "node_modules" &&
+        entry.name !== ".git"
+      ) {
+        stack.push(path.join(current, entry.name));
       }
     }
   }
@@ -134,8 +169,7 @@ async function main() {
   if (!rootDir) return;
   const mode = await askMode();
   const gitignorePath = path.join(rootDir, ".gitignore");
-
-  const targets = walkTargets(rootDir);
+  const targets = mode === "npm" ? walkPackageJson(rootDir) : walkTargets(rootDir);
   const total = targets.length || 1;
   const startTime = Date.now() / 1000;
   const maxLens = { status: 0, progress: 0 };
@@ -178,7 +212,10 @@ async function main() {
 
   try {
     for (const fullPath of targets) {
-      const relative = path.relative(rootDir, fullPath).split(path.sep).join("/") + "/";
+      const relative =
+        mode === "npm"
+          ? path.relative(rootDir, fullPath) || "."
+          : path.relative(rootDir, fullPath).split(path.sep).join("/") + "/";
       state.message = relative;
 
       if (mode === "gitignore") {
@@ -186,12 +223,18 @@ async function main() {
           fs.writeSync(gitignoreFd, relative + "\n", null, "utf8");
           existing.add(relative);
         }
-      } else {
+      } else if (mode === "delete") {
         try {
           await fs.promises.rm(fullPath, { recursive: true, force: true });
         } catch {
           // ignore errors
         }
+      } else if (mode === "npm") {
+        const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+        spawnSync(npmCmd, ["install"], {
+          cwd: fullPath,
+          stdio: "inherit",
+        });
       }
 
       state.done += 1;
