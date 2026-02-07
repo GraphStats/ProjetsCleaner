@@ -1,0 +1,16 @@
+{
+  "name": "gitignore-bot",
+  "version": "0.1.0",
+  "description": "Scan un projet, ajoute les dossiers node_modules/venv dans .gitignore ou les supprime, avec barre de progression.",
+  "main": "src/index.js",
+  "bin": {
+    "gitignore-bot": "bin/gitignore-bot.js"
+  },
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/index.js",
+    "cli": "node bin/gitignore-bot.js"
+  },
+  "author": "",
+  "license": "MIT"
+}
