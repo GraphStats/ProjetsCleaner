@@ -16,26 +16,17 @@ function prompt(question) {
 }
 
 async function askRootDir() {
-  const cwd = process.cwd();
-  console.log(`Chemin courant detecte: ${cwd}`);
-  const change = (await prompt("Voulez-vous saisir un autre chemin ? (o/N) : ")).trim().toLowerCase();
-  const useOther = change === "o" || change === "oui" || change === "y" || change === "yes";
-
-  let candidate = cwd;
-  if (useOther) {
-    const raw = (await prompt("Chemin du projet a nettoyer (.gitignore sera mis a jour ici) : ")).trim();
-    const cleaned = raw.replace(/^['\"]|['\"]$/g, "");
-    if (cleaned) {
-      candidate = cleaned;
-    }
-  }
-
+  const raw = (await prompt("Chemin du projet a nettoyer (.gitignore sera mis a jour ici) : ")).trim();
+  const cleaned = raw.replace(/^['\"]|['\"]$/g, "");
+  const candidate = cleaned || process.cwd();
   const root = path.resolve(candidate);
   if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) {
     console.log(`Chemin invalide: ${root}`);
     return null;
   }
-  console.log(`Chemin utilise: ${root}`);
+  if (!cleaned) {
+    console.log(`Chemin utilise (defaut cwd): ${root}`);
+  }
   return root;
 }
 
