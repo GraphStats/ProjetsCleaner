@@ -16,6 +16,8 @@ npm install
 ## Utilisation
 ```bash
 clean
+# version
+clean --version
 ```
 1. Saisis le chemin du projet a nettoyer (le `.gitignore` dans ce dossier sera mis a jour si tu choisis le mode 1).
 2. Choisis le mode :
