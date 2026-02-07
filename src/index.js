@@ -107,7 +107,6 @@ function walkPackageJson(rootDir) {
     );
     if (hasPackage) {
       hits.push(current);
-      continue;
     }
     for (const entry of entries) {
       if (
@@ -230,11 +229,15 @@ async function main() {
           // ignore errors
         }
       } else if (mode === "npm") {
+        // Avance la barre avant le démarrage de l'install (pour montrer l'évolution)
+        state.done += 1;
+        tick();
         const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
         spawnSync(npmCmd, ["install"], {
           cwd: fullPath,
           stdio: "inherit",
         });
+        continue;
       }
 
       state.done += 1;

@@ -1,6 +1,6 @@
 {
   "name": "projetscleaner",
-  "version": "0.2.0",
+  "version": "0.2.2",
   "description": "Scan un projet, ajoute les dossiers node_modules/venv dans .gitignore ou les supprime, avec barre de progression.",
   "main": "src/index.js",
   "bin": {
