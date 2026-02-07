@@ -1,15 +1,15 @@
 {
-  "name": "gitignore-bot",
-  "version": "0.1.0",
+  "name": "projetscleaner",
+  "version": "0.1.1",
   "description": "Scan un projet, ajoute les dossiers node_modules/venv dans .gitignore ou les supprime, avec barre de progression.",
   "main": "src/index.js",
   "bin": {
-    "gitignore-bot": "bin/gitignore-bot.js"
+    "projetscleaner": "bin/projetscleaner.js"
   },
   "type": "commonjs",
   "scripts": {
     "start": "node src/index.js",
-    "cli": "node bin/gitignore-bot.js"
+    "cli": "node bin/projetscleaner.js"
   },
   "author": "",
   "license": "MIT"
