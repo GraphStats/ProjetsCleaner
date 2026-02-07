@@ -125,8 +125,8 @@ function updateStatus({ spinner, message, total, done, startTime, maxLens }) {
   const progressPad = progress.padEnd(maxLens.progress, " ");
 
   const clear = "\x1b[2K";
-  process.stdout.write("\x1b[2A"); // up two lines
-  process.stdout.write(`\r${clear}${statusPad}\n${clear}${progressPad}\n`);
+  const upTwo = "\x1b[2F";
+  process.stdout.write(`${upTwo}${clear}\r${statusPad}\n${clear}\r${progressPad}\n`);
 }
 
 async function main() {
