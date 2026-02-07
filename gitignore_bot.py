@@ -115,7 +115,7 @@ def update_status(spinner_char, message, total, done, start_time, _max_len=[0, 0
     status_pad = status.ljust(_max_len[0])
     progress_pad = progress.ljust(_max_len[1])
 
-    sys.stdout.write("\x1b[1F\r" + status_pad + "\n" + progress_pad)
+    sys.stdout.write("\r\x1b[2K\x1b[1A\x1b[2K" + status_pad + "\n\x1b[2K" + progress_pad)
     sys.stdout.flush()
 
 
@@ -155,28 +155,21 @@ def main():
                     full_path = os.path.join(current_path, dirname)
                     relative_path = os.path.relpath(full_path, root_dir)
                     entry = relative_path.replace("\\", "/") + "/"
-
                     if mode == "gitignore":
-                        if entry in existing:
-                            pass
-                        else:
+                        if entry not in existing:
                             gitignore.write(entry + "\n")
                             gitignore.flush()
                             existing.add(entry)
+                            changes += 1
                     else:
                         if os.path.exists(full_path):
                             shutil.rmtree(full_path, ignore_errors=True)
-                    changes += 1
+                            changes += 1
                     processed += 1
                     spinner_char = next(spinner)
-                    update_status(spinner_char, entry, total_targets or processed, processed, start_time)
+                    total_effective = total_targets or processed
+                    update_status(spinner_char, entry, total_effective, processed, start_time)
                     time.sleep(0.05)
-                else:
-                    if dirname in TARGET_FOLDERS:
-                        processed += 1
-                        spinner_char = next(spinner)
-                        update_status(spinner_char, dirname, total_targets or processed, processed, start_time)
-                        time.sleep(0.05)
     finally:
         if gitignore:
             gitignore.close()
