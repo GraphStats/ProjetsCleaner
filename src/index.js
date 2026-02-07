@@ -1,7 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 const readline = require("readline");
-const { spawnSync } = require("child_process");
+const { spawn } = require("child_process");
 
 const TARGET_FOLDERS = new Set(["node_modules", "venv", ".venv", "env", ".env"]);
 const spinnerFrames = ["|", "/", "-", "\\"];
@@ -91,6 +91,19 @@ function walkTargets(rootDir) {
   return hits;
 }
 
+const SKIP_DIRS = new Set([
+  "node_modules",
+  ".git",
+  ".pnpm",
+  ".next",
+  "dist",
+  "build",
+  "out",
+  ".cache",
+  "coverage",
+  ".turbo",
+]);
+
 function walkPackageJson(rootDir) {
   const stack = [rootDir];
   const hits = [];
@@ -109,16 +122,62 @@ function walkPackageJson(rootDir) {
       hits.push(current);
     }
     for (const entry of entries) {
-      if (
-        entry.isDirectory() &&
-        entry.name !== "node_modules" &&
-        entry.name !== ".git"
-      ) {
-        stack.push(path.join(current, entry.name));
-      }
+      if (!entry.isDirectory()) continue;
+      if (SKIP_DIRS.has(entry.name)) continue;
+      stack.push(path.join(current, entry.name));
     }
   }
   return hits;
+}
+
+async function dirSizeBytes(dir) {
+  let total = 0;
+  const stack = [dir];
+  while (stack.length) {
+    const current = stack.pop();
+    let entries;
+    try {
+      entries = await fs.promises.readdir(current, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const entry of entries) {
+      const full = path.join(current, entry.name);
+      if (entry.isDirectory()) {
+        stack.push(full);
+      } else {
+        try {
+          const stat = await fs.promises.stat(full);
+          total += stat.size;
+        } catch {
+          // ignore unreadable files
+        }
+      }
+    }
+  }
+  return total;
+}
+
+function runNpmInstall(dir) {
+  return new Promise((resolve) => {
+    const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
+    let child;
+    try {
+      child = spawn(npmCmd, ["install"], {
+        cwd: dir,
+        stdio: ["ignore", "ignore", "ignore"],
+        shell: process.platform === "win32",
+      });
+    } catch (err) {
+      console.error(`npm install failed in ${dir}: ${err.message}`);
+      return resolve(false);
+    }
+    child.on("close", (code) => resolve(code === 0));
+    child.on("error", (err) => {
+      console.error(`npm install failed in ${dir}: ${err.message}`);
+      resolve(false);
+    });
+  });
 }
 
 function makeProgressBar(percent, termWidth) {
@@ -169,9 +228,20 @@ async function main() {
   const mode = await askMode();
   const gitignorePath = path.join(rootDir, ".gitignore");
   const targets = mode === "npm" ? walkPackageJson(rootDir) : walkTargets(rootDir);
+
+  if (mode === "npm" && targets.length === 0) {
+    console.log("Aucun package.json trouve, rien a installer.");
+    return;
+  }
+
   const total = targets.length || 1;
   const startTime = Date.now() / 1000;
   const maxLens = { status: 0, progress: 0 };
+  const installedList = [];
+  let addedCount = 0;
+  let deletedCount = 0;
+  let bytesFreed = 0;
+  let validTargets = targets;
 
   console.log("Scan demarre");
   console.log();
@@ -210,7 +280,13 @@ async function main() {
   const interval = setInterval(tick, 50);
 
   try {
-    for (const fullPath of targets) {
+    if (mode === "npm") {
+      validTargets = targets.filter((p) =>
+        fs.existsSync(path.join(p, "package.json"))
+      );
+    }
+
+    for (const fullPath of validTargets) {
       const relative =
         mode === "npm"
           ? path.relative(rootDir, fullPath) || "."
@@ -221,23 +297,21 @@ async function main() {
         if (!existing.has(relative)) {
           fs.writeSync(gitignoreFd, relative + "\n", null, "utf8");
           existing.add(relative);
+          addedCount += 1;
         }
       } else if (mode === "delete") {
         try {
+          const sz = await dirSizeBytes(fullPath);
           await fs.promises.rm(fullPath, { recursive: true, force: true });
+          deletedCount += 1;
+          bytesFreed += sz;
         } catch {
           // ignore errors
         }
       } else if (mode === "npm") {
-        // Avance la barre avant le démarrage de l'install (pour montrer l'évolution)
-        state.done += 1;
-        tick();
-        const npmCmd = process.platform === "win32" ? "npm.cmd" : "npm";
-        spawnSync(npmCmd, ["install"], {
-          cwd: fullPath,
-          stdio: "inherit",
-        });
-        continue;
+        tick(); // show progress before starting install
+        const ok = await runNpmInstall(fullPath);
+        installedList.push(`${ok ? "OK" : "FAIL"} ${relative}`);
       }
 
       state.done += 1;
@@ -253,18 +327,39 @@ async function main() {
       ? state.done === 0
         ? "aucun nouveau dossier"
         : "mise a jour terminee"
+      : mode === "delete"
+      ? state.done === 0
+        ? "aucune suppression"
+        : "suppressions terminees"
       : state.done === 0
-      ? "aucune suppression"
-      : "suppressions terminees";
+      ? "aucune installation"
+      : "installations npm terminees";
 
   updateStatus({
     spinner: "OK",
     message: finalMessage,
-    total: state.total,
-    done: state.total,
+    total: validTargets.length || state.total,
+    done: validTargets.length || state.total,
     startTime: state.startTime,
     maxLens: state.maxLens,
   });
+  if (mode === "npm") {
+    if (installedList.length) {
+      console.log("Installations effectuees :");
+      installedList.forEach((p) => console.log(`- ${p}`));
+    } else {
+      console.log("Aucune installation effectuee.");
+    }
+  } else if (mode === "gitignore") {
+    console.log(`OK ${targets.length} dossiers trouves`);
+    console.log(`OK ${addedCount} ajoutes au .gitignore`);
+    console.log("Espace libere : ~0 MB");
+  } else if (mode === "delete") {
+    const freedMb = bytesFreed / (1024 * 1024);
+    console.log(`OK ${targets.length} dossiers trouves`);
+    console.log(`OK ${deletedCount} supprimes`);
+    console.log(`Espace libere : ~${freedMb.toFixed(1)} MB`);
+  }
   console.log("Scan termine");
 }
 
