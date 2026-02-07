@@ -136,7 +136,7 @@ async function main() {
   const gitignorePath = path.join(rootDir, ".gitignore");
 
   const targets = walkTargets(rootDir);
-  const total = targets.length;
+  const total = targets.length || 1;
   const startTime = Date.now() / 1000;
   const maxLens = { status: 0, progress: 0 };
 
@@ -151,64 +151,73 @@ async function main() {
     gitignoreFd = fs.openSync(gitignorePath, "a");
   }
 
-  let done = 0;
-  let spinnerIndex = 0;
-
-  updateStatus({
-    spinner: spinnerFrames[spinnerIndex],
+  const state = {
     message: "en attente",
-    total: total || 1,
-    done,
+    done: 0,
+    total,
     startTime,
     maxLens,
-  });
+    spinnerIndex: 0,
+  };
 
-  for (const fullPath of targets) {
-    const relative = path.relative(rootDir, fullPath).split(path.sep).join("/") + "/";
-
-    if (mode === "gitignore") {
-      if (!existing.has(relative)) {
-        fs.writeSync(gitignoreFd, relative + "\n", null, "utf8");
-        existing.add(relative);
-      }
-    } else {
-      try {
-        fs.rmSync(fullPath, { recursive: true, force: true });
-      } catch {
-        // ignore errors
-      }
-    }
-
-    done += 1;
-    spinnerIndex = (spinnerIndex + 1) % spinnerFrames.length;
+  const tick = () => {
+    const spinner = spinnerFrames[state.spinnerIndex];
+    state.spinnerIndex = (state.spinnerIndex + 1) % spinnerFrames.length;
     updateStatus({
-      spinner: spinnerFrames[spinnerIndex],
-      message: relative,
-      total: total || done,
-      done,
-      startTime,
-      maxLens,
+      spinner,
+      message: state.message,
+      total: state.total,
+      done: state.done,
+      startTime: state.startTime,
+      maxLens: state.maxLens,
     });
-  }
+  };
 
-  if (gitignoreFd) fs.closeSync(gitignoreFd);
+  tick();
+  const interval = setInterval(tick, 50);
+
+  try {
+    for (const fullPath of targets) {
+      const relative = path.relative(rootDir, fullPath).split(path.sep).join("/") + "/";
+      state.message = relative;
+
+      if (mode === "gitignore") {
+        if (!existing.has(relative)) {
+          fs.writeSync(gitignoreFd, relative + "\n", null, "utf8");
+          existing.add(relative);
+        }
+      } else {
+        try {
+          await fs.promises.rm(fullPath, { recursive: true, force: true });
+        } catch {
+          // ignore errors
+        }
+      }
+
+      state.done += 1;
+      tick();
+    }
+  } finally {
+    clearInterval(interval);
+    if (gitignoreFd) fs.closeSync(gitignoreFd);
+  }
 
   const finalMessage =
     mode === "gitignore"
-      ? done === 0
+      ? state.done === 0
         ? "aucun nouveau dossier"
         : "mise a jour terminee"
-      : done === 0
+      : state.done === 0
       ? "aucune suppression"
       : "suppressions terminees";
 
   updateStatus({
     spinner: "OK",
     message: finalMessage,
-    total: total || 1,
-    done: total || done || 1,
-    startTime,
-    maxLens,
+    total: state.total,
+    done: state.total,
+    startTime: state.startTime,
+    maxLens: state.maxLens,
   });
   console.log("Scan termine");
 }
