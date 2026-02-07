@@ -23,7 +23,7 @@ async function askRootDir() {
 
   let candidate = cwd;
   if (useOther) {
-    const raw = (await prompt("Chemin du projet a nettoyer (.gitignore sera mis a jour ici) : ")).trim();
+    const raw = (await prompt("Chemin du projet a nettoyer : ")).trim();
     const cleaned = raw.replace(/^['\"]|['\"]$/g, "");
     if (cleaned) {
       candidate = cleaned;
